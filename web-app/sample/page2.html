@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Page 2</title>
+<script src="../../sdk.js"></script>
+<style>
+  body { margin: 0; font-family: system-ui, sans-serif; background: var(--md-surface, #121826); color: var(--md-fg, #e7ebf3); display: grid; place-items: center; min-height: 100vh; text-align: center; }
+  h1 { font-size: 28px; margin: 0 0 8px; }
+  p { opacity: .6; }
+  button { border: 0; border-radius: 12px; padding: 14px 20px; font: inherit; font-weight: 600; cursor: pointer; background: var(--md-accent, #7c9cff); color: #0b0f17; }
+</style>
+</head>
+<body>
+<div>
+  <h1>Page 2</h1>
+  <p>The tile's back button (or the browser history) takes you home.<br/>Same-origin pages get real history; the bridge sends a <code>back</code> event too.</p>
+  <button onclick="MagicDash.back()">MagicDash.back()</button>
+</div>
+</body>
+</html>

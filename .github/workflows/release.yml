@@ -1,0 +1,21 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    permissions: { contents: write }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pack
+        run: |
+          V=$(sed -n "s/.*version: '\([^']*\)'.*/\1/p" web-app/manifest.ts | head -1)
+          zip -r "web-app-$V.zip" web-app -x '*/.*'
+          sha256sum "web-app-$V.zip" > "web-app-$V.zip.sha256"
+          cat "web-app-$V.zip.sha256"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            web-app-*.zip
+            web-app-*.zip.sha256

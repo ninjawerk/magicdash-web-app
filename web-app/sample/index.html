@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sample kiosk app</title>
+<script src="../../sdk.js"></script>
+<style>
+  :root { --md-accent: #7c9cff; --md-fg: #e7ebf3; --md-surface: #121826; --md-cool: #7cc4ff; --md-warm: #ff9f68; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, sans-serif; background: var(--md-surface); color: var(--md-fg); min-height: 100vh; }
+  main { padding: 20px; max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .muted { opacity: .6; font-size: 13px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin: 18px 0; }
+  button { border: 0; border-radius: 12px; padding: 14px 12px; font: inherit; font-weight: 600; cursor: pointer; background: color-mix(in srgb, var(--md-fg) 10%, transparent); color: var(--md-fg); }
+  button.primary { background: var(--md-accent); color: #0b0f17; }
+  .card { border-radius: 14px; padding: 14px; background: color-mix(in srgb, var(--md-fg) 6%, transparent); margin-top: 12px; }
+  code, pre { font-family: ui-monospace, monospace; font-size: 12px; }
+  pre { white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow: auto; margin: 6px 0 0; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; background: color-mix(in srgb, var(--md-accent) 20%, transparent); color: var(--md-accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Sample kiosk app <span class="pill" id="status">connecting…</span></h1>
+  <div class="muted">A plain HTML page using the MagicDash bridge. View source to copy the pattern. Theme colours arrive as <code>--md-*</code> CSS variables.</div>
+
+  <div class="grid">
+    <button class="primary" onclick="MagicDash.notify('Hello from the kiosk app 👋', {title: 'Sample app', level: 'success'})">Toast</button>
+    <button onclick="toggleAlert()">Alert (red tile)</button>
+    <button onclick="MagicDash.setBackground(bg = bg ? undefined : 'linear-gradient(135deg, var(--accent), transparent)')">Tile background</button>
+    <button onclick="MagicDash.expand()">Full screen</button>
+    <button onclick="MagicDash.collapse()">Leave full screen</button>
+    <button onclick="MagicDash.navigate('page2.html')">Go to page 2 →</button>
+    <button onclick="MagicDash.requestAttention('demo').then(r => log('attention: ' + JSON.stringify(r)))">Grab attention</button>
+    <button onclick="MagicDash.releaseAttention()">Release attention</button>
+    <button onclick="count()">Counter (kv): <span id="n">…</span></button>
+    <button onclick="MagicDash.openSettings()">Open tile settings</button>
+    <button onclick="MagicDash.publish('sample:ping', {at: Date.now()}).then(() => log('published sample:ping'))">Publish topic</button>
+  </div>
+
+  <div class="card"><strong>Context</strong> <span class="muted">(location, name, units, locale)</span><pre id="ctx">…</pre></div>
+  <div class="card"><strong>Weather from the dashboard</strong> <span class="muted">(topic weather:current, needs the weather tile)</span><pre id="wx">waiting…</pre></div>
+  <div class="card"><strong>Log</strong><pre id="log"></pre></div>
+</main>
+<script>
+  var alertOn = false, bg = null;
+  function log(m) { var el = document.getElementById('log'); el.textContent = new Date().toLocaleTimeString() + '  ' + m + '\n' + el.textContent; }
+  function toggleAlert() { alertOn = !alertOn; MagicDash.setAlert(alertOn); }
+  function count() { MagicDash.kv.get('count').then(function (v) { var n = (v || 0) + 1; document.getElementById('n').textContent = n; return MagicDash.kv.set('count', n); }).catch(function (e) { log(e.message); }); }
+  MagicDash.ready().then(function (ctx) {
+    document.getElementById('status').textContent = 'connected · ' + MagicDash.size.w + '×' + MagicDash.size.h;
+    document.getElementById('ctx').textContent = JSON.stringify({ context: ctx, locale: MagicDash.locale, editMode: MagicDash.editMode, expanded: MagicDash.expanded }, null, 1);
+    MagicDash.kv.get('count').then(function (v) { document.getElementById('n').textContent = v || 0; }).catch(function () { document.getElementById('n').textContent = 'off'; });
+    log('ready');
+  });
+  MagicDash.on('size', function (s) { document.getElementById('status').textContent = 'connected · ' + s.w + '×' + s.h + ' · ' + Math.round(s.width) + 'px'; });
+  MagicDash.on('expanded', function (x) { log('expanded: ' + x); });
+  MagicDash.on('context', function (c) { document.getElementById('ctx').textContent = JSON.stringify(c, null, 1); });
+  MagicDash.on('topic:weather:current', function (w) { document.getElementById('wx').textContent = JSON.stringify(w, null, 1); });
+  MagicDash.on('back', function () { log('back pressed on the home page'); return false; });
+</script>
+</body>
+</html>
