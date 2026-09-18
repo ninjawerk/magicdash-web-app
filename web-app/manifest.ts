@@ -5,7 +5,7 @@ const manifest: PluginManifest = {
   name: 'Web app',
   description:
     'Show any web page or your own kiosk app in a tile: browse inside it, a customisable back button, full-screen mode, page rotation, idle return-home, and a JavaScript bridge so the page can talk to the kiosk (toasts, alerts, screens, weather, storage). Host your own apps right on the dashboard.',
-  version: '1.0.0',
+  version: '1.0.1',
   sdkVersion: 1,
   minHost: '0.2.0',
   author: 'ninjawerk',

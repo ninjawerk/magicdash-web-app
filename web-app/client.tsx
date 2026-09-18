@@ -97,6 +97,16 @@ function WebAppWidget({ config, context, size, editMode, api, openSettings, setA
   const lastActivity = useRef(Date.now());
   const backReply = useRef<((handled: boolean) => void) | null>(null);
   const [rect, setRect] = useState<{ x: number; y: number; w: number; h: number; visible: boolean }>({ x: 0, y: 0, w: 0, h: 0, visible: false });
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const [toolbarHeight, setToolbarHeight] = useState(0);
+  useEffect(() => {
+    const el = toolbarRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setToolbarHeight(Math.round(el.getBoundingClientRect().height)));
+    ro.observe(el);
+    setToolbarHeight(Math.round(el.getBoundingClientRect().height));
+    return () => ro.disconnect();
+  }, [editMode, home, expanded, config.toolbar]);
 
   // Reset when the home page changes.
   useEffect(() => {
@@ -504,27 +514,29 @@ function WebAppWidget({ config, context, size, editMode, api, openSettings, setA
   const showBackFloating = config.backStyle !== 'hidden' && (config.backStyle ?? 'floating') === 'floating' && (config.backOnlyWhenAway === false || away || expanded);
   const buttons = new Set(config.toolbarButtons ?? ['back', 'home', 'reload', 'url', 'expand']);
   const touchSize = (config.toolbarSize ?? 'touch') === 'touch';
-  const btn = `flex items-center justify-center rounded-lg text-white/85 hover:bg-white/15 active:bg-white/25 ${touchSize ? 'h-11 w-11' : 'h-8 w-8'}`;
+  const btn = 'flex shrink-0 items-center justify-center rounded-lg text-white/85 hover:bg-white/15 active:bg-white/25';
+  const btnStyle: React.CSSProperties = { height: touchSize ? 44 : 32, width: touchSize ? 44 : 32 };
   const iconSize = touchSize ? 20 : 16;
   const radius = expanded ? 0 : 'var(--tile-radius)';
   const frameStyle: React.CSSProperties = expanded
     ? { position: 'fixed', inset: 0, zIndex: 95 }
     : { position: 'fixed', left: rect.x, top: rect.y, width: rect.w, height: rect.h, zIndex: 20, display: rect.visible ? undefined : 'none', borderRadius: radius, overflow: 'hidden' };
-  const back = (
-    <BackButton
-      config={config}
-      onClick={goBack}
-      floating
-      label={config.backLabel ?? 'Back'}
-    />
-  );
+  // In full screen the toolbar is docked (always visible, page below it) and carries the styled Back button.
+  const docked = expanded && toolbarMode !== 'never';
+  const toolbarVisible = docked || toolbarOpen;
+  // Keep the floating button clear of the toolbar when both sit on the same edge.
+  const toolbarEdge = config.toolbarPosition === 'bottom' ? 'b' : 't';
+  const backEdge = (config.backPosition ?? 'bl')[0];
+  const backOffset = toolbarMode !== 'never' && toolbarVisible && backEdge === toolbarEdge ? toolbarHeight : 0;
+  const back = <BackButton config={config} onClick={goBack} label={config.backLabel ?? 'Back'} offset={backOffset} />;
+  const pageInset: React.CSSProperties = docked ? (config.toolbarPosition === 'bottom' ? { bottom: toolbarHeight } : { top: toolbarHeight }) : {};
 
   return (
     <>
       <div ref={hostRef} className="h-full w-full" style={{ background: config.background ?? '#000' }} />
       {createPortal(
         <div style={{ ...frameStyle, background: config.background ?? '#000' }} onMouseEnter={showToolbar} onPointerDownCapture={touch} onMouseMoveCapture={touch} className={expanded ? '' : 'transition-none'}>
-          <div className="absolute inset-0" style={scale === 1 ? undefined : { width: `${100 / scale}%`, height: `${100 / scale}%`, transform: `scale(${scale})`, transformOrigin: '0 0' }}>
+          <div className="absolute inset-0" style={{ ...pageInset, ...(scale === 1 ? {} : { width: `${100 / scale}%`, height: `calc(${100 / scale}% - ${(docked ? toolbarHeight : 0) / scale}px)`, transform: `scale(${scale})`, transformOrigin: '0 0' }) }}>
             <iframe
               key={nonce}
               ref={iframeRef}
@@ -545,45 +557,48 @@ function WebAppWidget({ config, context, size, editMode, api, openSettings, setA
           )}
           {toolbarMode !== 'never' && (
             <div
-              className={`surface-glass absolute inset-x-0 flex items-center gap-1 px-2 py-1.5 text-sm shadow-lg transition-transform duration-200 ${config.toolbarPosition === 'bottom' ? 'bottom-0' : 'top-0'} ${toolbarOpen ? 'translate-y-0' : config.toolbarPosition === 'bottom' ? 'translate-y-full' : '-translate-y-full'}`}
+              ref={toolbarRef}
+              className={`surface-glass absolute inset-x-0 flex items-center gap-1 px-2 py-1.5 text-sm shadow-lg ${config.toolbarPosition === 'bottom' ? 'bottom-0' : 'top-0'}`}
+              style={{ transition: 'transform 200ms ease', transform: toolbarVisible ? 'translateY(0)' : config.toolbarPosition === 'bottom' ? 'translateY(100%)' : 'translateY(-100%)' }}
               onMouseEnter={showToolbar}
               onPointerDown={showToolbar}
             >
-              {buttons.has('back') && (
-                <button className={btn} onClick={goBack} title="Back" type="button">
+              {docked && config.backStyle !== 'hidden' && <BackButton config={config} onClick={goBack} label={config.backLabel ?? 'Back'} inline height={touchSize ? 44 : 32} />}
+              {buttons.has('back') && !(docked && config.backStyle !== 'hidden') && (
+                <button className={btn} style={btnStyle} onClick={goBack} title="Back" type="button">
                   <ArrowLeft size={iconSize} />
                 </button>
               )}
               {buttons.has('forward') && sameOrigin() && (
-                <button className={btn} onClick={goForward} title="Forward" type="button">
+                <button className={btn} style={btnStyle} onClick={goForward} title="Forward" type="button">
                   <ArrowRight size={iconSize} />
                 </button>
               )}
               {buttons.has('home') && (
-                <button className={btn} onClick={goHome} title="Home" type="button">
+                <button className={btn} style={btnStyle} onClick={goHome} title="Home" type="button">
                   <Home size={iconSize} />
                 </button>
               )}
               {buttons.has('reload') && (
-                <button className={btn} onClick={reload} title="Reload" type="button">
+                <button className={btn} style={btnStyle} onClick={reload} title="Reload" type="button">
                   <RotateCw size={iconSize} />
                 </button>
               )}
               {buttons.has('url') && <div className="min-w-0 flex-1 truncate rounded-lg bg-white/8 px-3 py-1.5 font-mono text-[11px] text-white/60">{prettyUrl(href)}</div>}
               {!buttons.has('url') && <div className="flex-1" />}
               {buttons.has('expand') && (
-                <button className={btn} onClick={() => setExpanded((v) => !v)} title={expanded ? 'Leave full screen' : 'Full screen'} type="button">
+                <button className={btn} style={btnStyle} onClick={() => setExpanded((v) => !v)} title={expanded ? 'Leave full screen' : 'Full screen'} type="button">
                   {expanded ? <Minimize2 size={iconSize} /> : <Maximize2 size={iconSize} />}
                 </button>
               )}
               {expanded && !buttons.has('expand') && (
-                <button className={btn} onClick={collapse} title="Leave full screen" type="button">
+                <button className={btn} style={btnStyle} onClick={collapse} title="Leave full screen" type="button">
                   <X size={iconSize} />
                 </button>
               )}
             </div>
           )}
-          {toolbarMode === 'auto' && !toolbarOpen && (
+          {toolbarMode === 'auto' && !toolbarVisible && (
             <button
               type="button"
               aria-label="Show toolbar"
@@ -593,7 +608,7 @@ function WebAppWidget({ config, context, size, editMode, api, openSettings, setA
               <MoreHorizontal size={14} />
             </button>
           )}
-          {showBackFloating && back}
+          {showBackFloating && !docked && back}
         </div>,
         document.body,
       )}
@@ -601,12 +616,13 @@ function WebAppWidget({ config, context, size, editMode, api, openSettings, setA
   );
 }
 
-function BackButton({ config, onClick, label }: { config: Config; onClick: () => void; floating: boolean; label: string }) {
-  const sizePx = config.backSize ?? 48;
+function BackButton({ config, onClick, label, offset = 0, inline = false, height }: { config: Config; onClick: () => void; label: string; offset?: number; inline?: boolean; height?: number }) {
+  const sizePx = inline ? (height ?? 40) : (config.backSize ?? 48);
   const icon = config.backIcon ?? 'arrow';
   const Icon = icon === 'arrow' ? ArrowLeft : icon === 'chevron' ? ChevronLeft : icon === 'home' ? Home : icon === 'x' ? X : null;
   const pos = config.backPosition ?? 'bl';
-  const posCls = { tl: 'top-3 left-3', tr: 'top-3 right-3', bl: 'bottom-3 left-3', br: 'bottom-3 right-3' }[pos];
+  const posCls = { tl: 'left-3', tr: 'right-3', bl: 'left-3', br: 'right-3' }[pos];
+  const edge: React.CSSProperties = pos.startsWith('t') ? { top: 12 + offset } : { bottom: 12 + offset };
   const shape = config.backShape ?? 'pill';
   const color = config.backColor ?? 'accent';
   const style: React.CSSProperties = {
@@ -617,9 +633,23 @@ function BackButton({ config, onClick, label }: { config: Config; onClick: () =>
     borderRadius: shape === 'circle' ? 999 : shape === 'pill' ? 999 : Math.round(sizePx * 0.25),
     ...(color === 'accent' ? { background: 'var(--accent)', color: '#0b0f17' } : color === 'glass' ? { background: 'rgba(20,20,25,0.45)', color: '#fff', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.2)' } : color === 'dark' ? { background: '#111', color: '#fff' } : color === 'light' ? { background: '#fff', color: '#111' } : { background: config.backCustomColor ?? '#ff5c5c', color: '#fff' }),
     boxShadow: '0 8px 24px -8px rgba(0,0,0,0.6)',
+    transition: 'top 200ms ease, bottom 200ms ease, transform 100ms ease',
+    ...edge,
   };
+  if (inline) {
+    const { transition, ...rest } = style;
+    void transition;
+    delete (rest as Record<string, unknown>).top;
+    delete (rest as Record<string, unknown>).bottom;
+    return (
+      <button type="button" onClick={onClick} className="mr-1 flex shrink-0 items-center justify-center gap-2 font-semibold select-none active:scale-95" style={{ ...rest, boxShadow: 'none' }} aria-label={label || 'Back'}>
+        {Icon && <Icon size={Math.round(sizePx * 0.45)} strokeWidth={2.5} />}
+        {label && shape !== 'circle' && <span>{label}</span>}
+      </button>
+    );
+  }
   return (
-    <button type="button" onClick={onClick} className={`absolute ${posCls} z-10 flex items-center justify-center gap-2 font-semibold select-none active:scale-95 transition-transform`} style={style} aria-label={label || 'Back'}>
+    <button type="button" onClick={onClick} className={`absolute ${posCls} z-10 flex items-center justify-center gap-2 font-semibold select-none active:scale-95`} style={style} aria-label={label || 'Back'}>
       {Icon && <Icon size={Math.round(sizePx * 0.45)} strokeWidth={2.5} />}
       {label && shape !== 'circle' && <span>{label}</span>}
     </button>
