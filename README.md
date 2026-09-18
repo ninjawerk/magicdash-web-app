@@ -6,10 +6,16 @@ Show any web page, or your own kiosk app, inside a MagicDash tile. Browse within
 
 In [MagicDash](https://github.com/ninjawerk/magicdash): **Admin → Plugins → Browse catalog** and pick *Web app*, or upload the zip from the latest release.
 
+## Two modes
+
+- **Tile** — lives in the grid, can go full screen (the toolbar docks at the top with the styled Back button).
+- **Kiosk takeover** — the page *is* the screen: no toolbar, no back button, no dashboard. It covers the display as soon as the dashboard loads. To reach the dashboard again, press and hold an invisible spot in a corner (which corner and how long are configurable; default top-left, 3 s): the takeover pauses for a minute and a "Resume now" pill appears. Edit mode and the admin always show the grid, so you can change the tile from a laptop at any time.
+
 ## What the tile can do
 
 | Area | Options |
 |---|---|
+| Mode | tile or kiosk takeover; exit gesture corner and hold time |
 | Page | URL, or a **hosted app** uploaded to the dashboard; extra pages to rotate through (signage mode); zoom; reload interval; return-home after idle; loading backdrop |
 | Toolbar | show on tap/hover, always, or never; top or bottom; pick the buttons (back, forward, home, reload, address, full screen); compact or touch-sized |
 | Back button | floating over the page or toolbar-only; label, icon, position (any corner), shape, size, colour (accent, glass, dark, light, custom); only show when away from home; what it does (history → home, always home, reload, leave full screen) |

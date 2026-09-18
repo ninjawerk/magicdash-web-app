@@ -5,6 +5,9 @@ import { definePlugin, peek, publish, subscribe, type WidgetProps } from '../../
 import manifest from './manifest';
 
 interface Config {
+  mode?: 'tile' | 'kiosk';
+  exitHoldSec?: number;
+  exitCorner?: 'tl' | 'tr' | 'bl' | 'br';
   url?: string;
   app?: string;
   pages?: string[];
@@ -83,7 +86,19 @@ function WebAppWidget({ config, context, size, editMode, api, openSettings, setA
 
   const [src, setSrc] = useState(home);
   const [nonce, setNonce] = useState(0);
-  const [expanded, setExpanded] = useState(!!config.expandOnLoad);
+  const kiosk = config.mode === 'kiosk';
+  const [expandedState, setExpanded] = useState(!!config.expandOnLoad);
+  // Kiosk takeover: always expanded, unless the exit gesture paused it for a moment.
+  const [pausedUntil, setPausedUntil] = useState(0);
+  const [pauseTick, setPauseTick] = useState(0);
+  const paused = kiosk && pausedUntil > Date.now();
+  const expanded = kiosk ? !paused : expandedState;
+  useEffect(() => {
+    if (!paused) return;
+    const id = setInterval(() => setPauseTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [paused]);
+  void pauseTick;
   const [loading, setLoading] = useState(true);
   const [toolbarOpen, setToolbarOpen] = useState(config.toolbar === 'always');
   const [href, setHref] = useState<string>(home); // best-known current location
@@ -163,7 +178,9 @@ function WebAppWidget({ config, context, size, editMode, api, openSettings, setA
     setBridged(false);
     setNonce((n) => n + 1);
   }, []);
-  const collapse = useCallback(() => setExpanded(false), []);
+  const collapse = useCallback(() => {
+    if (!kiosk) setExpanded(false);
+  }, [kiosk]);
 
   const goBack = useCallback(() => {
     touch();
@@ -292,6 +309,7 @@ function WebAppWidget({ config, context, size, editMode, api, openSettings, setA
             setExpanded(true);
             return reply(true, { expanded: true });
           case 'collapse':
+            if (kiosk) return reply(false, 'This tile runs in kiosk takeover mode; it cannot collapse.');
             setExpanded(false);
             return reply(true, { expanded: false });
           case 'navigate':
@@ -362,7 +380,7 @@ function WebAppWidget({ config, context, size, editMode, api, openSettings, setA
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [config.bridge, config.bridgeOrigins, config.app, editMode, src, ready, post, touch, notify, setAlert, setBackground, attention, load, goBack, goHome, openSettings, api]);
+  }, [config.bridge, config.bridgeOrigins, config.app, editMode, src, ready, post, touch, notify, setAlert, setBackground, attention, load, goBack, goHome, openSettings, api, kiosk]);
   // Push changes to a connected page.
   useEffect(() => {
     if (bridged) post({ event: 'context', payload: context });
@@ -387,15 +405,16 @@ function WebAppWidget({ config, context, size, editMode, api, openSettings, setA
   // --- Attention while expanded --------------------------------------------------------------------------
   useEffect(() => {
     if (editMode) return;
+    if (kiosk) return;
     if (expanded && config.expandHoldsAttention !== false) attention.request('web app in full screen');
     else if (!expanded && attention.held) attention.release();
   }, [expanded, editMode]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (!expanded) return;
+    if (!expanded || kiosk) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && collapse();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [expanded, collapse]);
+  }, [expanded, collapse, kiosk]);
 
   // --- Idle, rotation, refresh ----------------------------------------------------------------------------
   useEffect(() => {
@@ -410,12 +429,12 @@ function WebAppWidget({ config, context, size, editMode, api, openSettings, setA
     if (!idle || editMode) return;
     const id = setInterval(() => {
       if (Date.now() - lastActivity.current < idle * 1000) return;
-      if (expanded && !config.expandOnLoad) setExpanded(false);
+      if (expanded && !config.expandOnLoad && !kiosk) setExpanded(false);
       if (src !== home || depth.current > 0) goHome();
       lastActivity.current = Date.now();
     }, 1000);
     return () => clearInterval(id);
-  }, [config.idleHomeSec, config.expandOnLoad, editMode, expanded, src, home, goHome]);
+  }, [config.idleHomeSec, config.expandOnLoad, editMode, expanded, src, home, goHome, kiosk]);
   useEffect(() => {
     if (pages.length < 2 || editMode || expanded) return;
     let i = pages.indexOf(src);
@@ -465,7 +484,7 @@ function WebAppWidget({ config, context, size, editMode, api, openSettings, setA
   }, [editMode, home, api]);
 
   // --- Toolbar auto-hide
-  const toolbarMode = config.toolbar ?? 'auto';
+  const toolbarMode: 'auto' | 'always' | 'never' = kiosk ? 'never' : (config.toolbar ?? 'auto');
   const hideTimer = useRef<number | undefined>(undefined);
   const showToolbar = useCallback(() => {
     if (toolbarMode !== 'auto') return;
@@ -503,6 +522,11 @@ function WebAppWidget({ config, context, size, editMode, api, openSettings, setA
         )}
         {check && !check.blocked && check.ok === false && (check.status ?? 0) > 0 && <div className="text-xs text-[var(--warm)]">The page answered HTTP {check.status}.</div>}
         {pages.length > 1 && <div className="text-xs text-white/45">Rotates through {pages.length} pages every {config.rotateSec ?? 30}s.</div>}
+        {kiosk && (
+          <div className="text-xs text-[var(--warm)]">
+            Kiosk takeover: covers the whole screen outside edit mode.{(config.exitHoldSec ?? 3) > 0 ? ` Hold the ${{ tl: 'top-left', tr: 'top-right', bl: 'bottom-left', br: 'bottom-right' }[config.exitCorner ?? 'tl']} corner for ${config.exitHoldSec ?? 3}s to pause it.` : ' No exit gesture: leave via the admin or press E.'}
+          </div>
+        )}
         <div className="text-xs text-white/35">Live preview when you leave edit mode.</div>
       </div>
     );
@@ -511,7 +535,7 @@ function WebAppWidget({ config, context, size, editMode, api, openSettings, setA
   const allow = (config.allow ?? []).join('; ');
   const sandbox = SANDBOX[config.sandbox ?? 'off'];
   const away = href.replace(/\/(index\.html)?$/, '') !== absolute(home, location.href).replace(/\/(index\.html)?$/, '') || depth.current > 0 || stack.current.length > 1;
-  const showBackFloating = config.backStyle !== 'hidden' && (config.backStyle ?? 'floating') === 'floating' && (config.backOnlyWhenAway === false || away || expanded);
+  const showBackFloating = !kiosk && config.backStyle !== 'hidden' && (config.backStyle ?? 'floating') === 'floating' && (config.backOnlyWhenAway === false || away || expanded);
   const buttons = new Set(config.toolbarButtons ?? ['back', 'home', 'reload', 'url', 'expand']);
   const touchSize = (config.toolbarSize ?? 'touch') === 'touch';
   const btn = 'flex shrink-0 items-center justify-center rounded-lg text-white/85 hover:bg-white/15 active:bg-white/25';
@@ -519,7 +543,7 @@ function WebAppWidget({ config, context, size, editMode, api, openSettings, setA
   const iconSize = touchSize ? 20 : 16;
   const radius = expanded ? 0 : 'var(--tile-radius)';
   const frameStyle: React.CSSProperties = expanded
-    ? { position: 'fixed', inset: 0, zIndex: 95 }
+    ? { position: 'fixed', inset: 0, zIndex: 75 } // under the dim layer (80), toasts (90) and display-off (95)
     : { position: 'fixed', left: rect.x, top: rect.y, width: rect.w, height: rect.h, zIndex: 20, display: rect.visible ? undefined : 'none', borderRadius: radius, overflow: 'hidden' };
   // In full screen the toolbar is docked (always visible, page below it) and carries the styled Back button.
   const docked = expanded && toolbarMode !== 'never';
@@ -534,6 +558,16 @@ function WebAppWidget({ config, context, size, editMode, api, openSettings, setA
   return (
     <>
       <div ref={hostRef} className="h-full w-full" style={{ background: config.background ?? '#000' }} />
+      {paused &&
+        createPortal(
+          <div className="surface-glass fixed left-1/2 top-4 z-[76] flex -translate-x-1/2 items-center gap-3 rounded-full border border-white/15 px-4 py-2 text-sm shadow-xl">
+            <span className="text-white/80">Kiosk paused · resumes in {Math.max(0, Math.ceil((pausedUntil - Date.now()) / 1000))}s</span>
+            <button type="button" className="btn btn-primary px-3 py-1 text-xs" onClick={() => setPausedUntil(0)}>
+              Resume now
+            </button>
+          </div>,
+          document.body,
+        )}
       {createPortal(
         <div style={{ ...frameStyle, background: config.background ?? '#000' }} onMouseEnter={showToolbar} onPointerDownCapture={touch} onMouseMoveCapture={touch} className={expanded ? '' : 'transition-none'}>
           <div className="absolute inset-0" style={{ ...pageInset, ...(scale === 1 ? {} : { width: `${100 / scale}%`, height: `calc(${100 / scale}% - ${(docked ? toolbarHeight : 0) / scale}px)`, transform: `scale(${scale})`, transformOrigin: '0 0' }) }}>
@@ -609,10 +643,42 @@ function WebAppWidget({ config, context, size, editMode, api, openSettings, setA
             </button>
           )}
           {showBackFloating && !docked && back}
+          {kiosk && expanded && (config.exitHoldSec ?? 3) > 0 && <ExitHotspot corner={config.exitCorner ?? 'tl'} holdMs={(config.exitHoldSec ?? 3) * 1000} onExit={() => setPausedUntil(Date.now() + 60_000)} />}
         </div>,
         document.body,
       )}
     </>
+  );
+}
+
+/** An invisible press-and-hold target in a corner; completing the hold fires onExit. */
+function ExitHotspot({ corner, holdMs, onExit }: { corner: 'tl' | 'tr' | 'bl' | 'br'; holdMs: number; onExit: () => void }) {
+  const timer = useRef<number | undefined>(undefined);
+  const [holding, setHolding] = useState(false);
+  const start = () => {
+    setHolding(true);
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => {
+      setHolding(false);
+      onExit();
+    }, holdMs);
+  };
+  const stop = () => {
+    setHolding(false);
+    window.clearTimeout(timer.current);
+  };
+  const pos = { tl: 'left-0 top-0', tr: 'right-0 top-0', bl: 'left-0 bottom-0', br: 'right-0 bottom-0' }[corner];
+  return (
+    <div
+      className={`absolute ${pos} z-20 h-14 w-14 select-none`}
+      style={{ background: holding ? 'radial-gradient(circle at center, rgba(255,255,255,0.25), transparent 70%)' : 'transparent', transition: 'background 300ms', touchAction: 'none' }}
+      onPointerDown={start}
+      onPointerUp={stop}
+      onPointerCancel={stop}
+      onPointerLeave={stop}
+      onContextMenu={(e) => e.preventDefault()}
+      aria-hidden
+    />
   );
 }
 

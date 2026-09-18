@@ -4,8 +4,8 @@ const manifest: PluginManifest = {
   id: 'web-app',
   name: 'Web app',
   description:
-    'Show any web page or your own kiosk app in a tile: browse inside it, a customisable back button, full-screen mode, page rotation, idle return-home, and a JavaScript bridge so the page can talk to the kiosk (toasts, alerts, screens, weather, storage). Host your own apps right on the dashboard.',
-  version: '1.0.1',
+    'Show any web page or your own kiosk app in a tile, or let it take over the whole screen: browse inside it, a customisable back button, full-screen mode, page rotation, idle return-home, and a JavaScript bridge so the page can talk to the kiosk (toasts, alerts, screens, weather, storage). Host your own apps right on the dashboard.',
+  version: '1.1.0',
   sdkVersion: 1,
   minHost: '0.2.0',
   author: 'ninjawerk',
@@ -18,6 +18,20 @@ const manifest: PluginManifest = {
     { key: 'kvEnabled', label: 'Let embedded apps store small values on this server (MagicDash.kv)', type: 'boolean', default: true },
   ],
   widgetConfig: [
+    // --- Mode
+    {
+      key: 'mode',
+      label: 'Mode',
+      type: 'select',
+      options: [
+        { value: 'tile', label: 'Tile — lives in the grid, can go full screen' },
+        { value: 'kiosk', label: 'Kiosk takeover — the page IS the screen: no toolbar, no back button, no dashboard' },
+      ],
+      default: 'tile',
+      help: 'Kiosk takeover covers the whole display as soon as the dashboard loads. Edit mode (or the admin) still shows the grid so you can change it.',
+    },
+    { key: 'exitHoldSec', label: 'Exit gesture: hold a corner for', type: 'number', min: 0, max: 10, step: 0.5, default: 3, unit: 's', help: 'Press and hold an invisible spot in the corner to pause the takeover for a minute and reach the dashboard. 0 = no gesture (leave via the admin or the E key on a keyboard).', showWhen: { key: 'mode', equals: 'kiosk' } },
+    { key: 'exitCorner', label: 'Exit corner', type: 'select', options: [{ value: 'tl', label: 'Top left' }, { value: 'tr', label: 'Top right' }, { value: 'bl', label: 'Bottom left' }, { value: 'br', label: 'Bottom right' }], default: 'tl', showWhen: { key: 'mode', equals: 'kiosk' } },
     // --- Page
     { key: 'url', label: 'Page URL', type: 'string', placeholder: 'https://example.com', help: 'The home page. Leave empty when you pick a hosted app below.' },
     { key: 'app', label: 'Hosted app', type: 'select', optionsFrom: '/apps/options', help: 'Apps uploaded in the Web app plugin settings (Admin → Plugins), or the bundled sample. Overrides the URL.' },
@@ -29,7 +43,7 @@ const manifest: PluginManifest = {
     { key: 'background', label: 'Backdrop while loading', type: 'color', default: '#000000' },
 
     // --- Toolbar
-    { key: 'toolbar', label: 'Toolbar', type: 'select', options: [{ value: 'auto', label: 'Show on tap / hover' }, { value: 'always', label: 'Always visible' }, { value: 'never', label: 'Hidden' }], default: 'auto' },
+    { key: 'toolbar', label: 'Toolbar', type: 'select', options: [{ value: 'auto', label: 'Show on tap / hover' }, { value: 'always', label: 'Always visible' }, { value: 'never', label: 'Hidden' }], default: 'auto', showWhen: { key: 'mode', equals: 'tile' } },
     { key: 'toolbarPosition', label: 'Toolbar position', type: 'select', options: [{ value: 'top', label: 'Top' }, { value: 'bottom', label: 'Bottom' }], default: 'top', showWhen: { key: 'toolbar', oneOf: ['auto', 'always'] } },
     {
       key: 'toolbarButtons',
@@ -49,7 +63,7 @@ const manifest: PluginManifest = {
     { key: 'toolbarSize', label: 'Button size', type: 'select', options: [{ value: 'compact', label: 'Compact (mouse)' }, { value: 'touch', label: 'Large (touch)' }], default: 'touch', showWhen: { key: 'toolbar', oneOf: ['auto', 'always'] } },
 
     // --- Back button
-    { key: 'backStyle', label: 'Back button', type: 'select', options: [{ value: 'floating', label: 'Floating over the page' }, { value: 'toolbar', label: 'Only in the toolbar' }, { value: 'hidden', label: 'Hidden' }], default: 'floating' },
+    { key: 'backStyle', label: 'Back button', type: 'select', options: [{ value: 'floating', label: 'Floating over the page' }, { value: 'toolbar', label: 'Only in the toolbar' }, { value: 'hidden', label: 'Hidden' }], default: 'floating', showWhen: { key: 'mode', equals: 'tile' } },
     { key: 'backAction', label: 'Back does', type: 'select', options: [{ value: 'smart', label: 'Go back in history, then home' }, { value: 'home', label: 'Always go home' }, { value: 'reload', label: 'Reload the page' }, { value: 'collapse', label: 'Leave full screen / go home' }], default: 'smart', showWhen: { key: 'backStyle', oneOf: ['floating', 'toolbar'] } },
     { key: 'backLabel', label: 'Back label', type: 'string', default: 'Back', placeholder: 'Back', help: 'Empty for icon only.', showWhen: { key: 'backStyle', equals: 'floating' } },
     { key: 'backIcon', label: 'Back icon', type: 'select', options: [{ value: 'arrow', label: 'Arrow ←' }, { value: 'chevron', label: 'Chevron ‹' }, { value: 'home', label: 'House' }, { value: 'x', label: 'Close ×' }, { value: 'none', label: 'No icon' }], default: 'arrow', showWhen: { key: 'backStyle', equals: 'floating' } },
@@ -61,8 +75,8 @@ const manifest: PluginManifest = {
     { key: 'backOnlyWhenAway', label: 'Only show back when away from home', type: 'boolean', default: true, showWhen: { key: 'backStyle', equals: 'floating' } },
 
     // --- Full screen
-    { key: 'expandOnLoad', label: 'Start in full screen', type: 'boolean', default: false, help: 'The page covers the whole dashboard until Back / collapse.' },
-    { key: 'expandHoldsAttention', label: 'Pause screen rotation while in full screen', type: 'boolean', default: true },
+    { key: 'expandOnLoad', label: 'Start in full screen', type: 'boolean', default: false, help: 'The page covers the whole dashboard until Back / collapse.', showWhen: { key: 'mode', equals: 'tile' } },
+    { key: 'expandHoldsAttention', label: 'Pause screen rotation while in full screen', type: 'boolean', default: true, showWhen: { key: 'mode', equals: 'tile' } },
 
     // --- Permissions
     {
